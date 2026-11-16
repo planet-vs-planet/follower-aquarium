@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>フォロワー水族館</title>
+<style id="appstyle">
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#021226;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;color:#fff}
+canvas{display:block;width:100vw;height:100vh}
+#hud{position:fixed;top:0;left:0;right:0;padding:16px 18px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}
+#title{font-size:20px;font-weight:800;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+#sub{font-size:13px;opacity:.8;margin-top:4px}
+#count{font-size:34px;font-weight:900;text-align:right;text-shadow:0 2px 10px rgba(0,0,0,.6)}
+#count small{font-size:14px;font-weight:700;opacity:.85}
+#legend{position:fixed;left:12px;bottom:12px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100vw - 80px);pointer-events:none}
+.chip{background:rgba(0,20,50,.55);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:4px 10px;font-size:12px;display:flex;align-items:center;gap:6px;backdrop-filter:blur(4px)}
+.chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.chip.locked{opacity:.45}
+#gear{position:fixed;right:12px;bottom:12px;width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:22px;cursor:pointer;backdrop-filter:blur(4px)}
+#toast{position:fixed;left:50%;top:22%;transform:translate(-50%,-20px);background:rgba(255,255,255,.95);color:#06325c;font-weight:800;padding:12px 20px;border-radius:14px;opacity:0;transition:all .5s;pointer-events:none;text-align:center;max-width:86vw}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#panel{position:fixed;inset:0;background:rgba(0,10,25,.7);display:none;align-items:flex-end;justify-content:center}
+#panel.open{display:flex}
+#sheet{background:#0b2240;width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px}
+#sheet h2{font-size:17px;margin-bottom:6px}
+#sheet p{font-size:13px;opacity:.8;line-height:1.6;margin-bottom:10px}
+#sheet label{display:block;font-size:13px;font-weight:700;margin:14px 0 6px}
+#sheet input,#sheet textarea{width:100%;background:#061629;color:#fff;border:1px solid #2a4a72;border-radius:10px;padding:10px;font-size:15px;font-family:inherit}
+#sheet textarea{height:170px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn{flex:1;min-width:130px;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:800;cursor:pointer;background:#1f6feb;color:#fff}
+.btn.sub{background:#22406a}
+#msg{font-size:13px;margin-top:10px;min-height:18px;color:#9fe3ff}
+</style>
+</head>
+<body>
+<script id="state" type="application/json">{"title":"フォロワー水族館","subtitle":"フォロー1人で、生き物1匹 みんなで作る水族館","count":111,"species":[{"name":"サカバンバスピス","nickname":"さかぽん","unlock":1,"shape":"fish","color":"#8fa8bf","color2":"#eef6fb","size":15,"speed":0.8},{"name":"シーラカンス","nickname":"かんちゃん","unlock":107,"shape":"fish","color":"#3d5a80","color2":"#98c1d9","pattern":"spots","size":20,"speed":0.7},{"name":"ダンクルオステウス","nickname":"タンク","unlock":108,"shape":"round","color":"#6b6259","color2":"#cfc4b0","size":23,"speed":0.5},{"name":"ニシオンデンザメ","nickname":"ノア","unlock":109,"shape":"long","color":"#54626e","color2":"#dfe7ec","size":30,"speed":0.6},{"name":"メガロドン","nickname":"メガドン","unlock":110,"shape":"long","color":"#42506b","color2":"#e6edf3","size":38,"speed":0.9},{"name":"リュウグウノツカイ","nickname":"神龍","unlock":111,"shape":"long","color":"#b8c4ce","color2":"#e8b4b8","size":24,"speed":0.7}]}</script>
+<script id="app">
+(function(){
+var MAX_DRAW = 400;
+var state = JSON.parse(document.getElementById('state').textContent);
+var STYLE = document.getElementById('appstyle').textContent;
+var APP = document.getElementById('app').textContent;
+var artifactApi = null;
+
+/* ---------- DOM ---------- */
+function el(tag, attrs, html){var e=document.createElement(tag);for(var k in (attrs||{}))e.setAttribute(k,attrs[k]);if(html!=null)e.innerHTML=html;return e;}
+var cv = el('canvas'); document.body.appendChild(cv);
+var ctx = cv.getContext('2d');
+var hud = el('div',{id:'hud'},'<div><div id="title"></div><div id="sub"></div></div><div id="count"></div>');
+document.body.appendChild(hud);
+var legend = el('div',{id:'legend'}); document.body.appendChild(legend);
+var toast = el('div',{id:'toast'}); document.body.appendChild(toast);
+var gear = el('button',{id:'gear','aria-label':'設定'},'⚙'); document.body.appendChild(gear);
+var panel = el('div',{id:'panel'});
+panel.innerHTML = '<div id="sheet">'+
+ '<h2>MUSEで更新する</h2>'+
+ '<p>①「MUSE用の指示文をコピー」→ MUSEに貼って、フォロワー数や魚のアイデアを伝える<br>② MUSEが返した設定（{ から } まで）を下に貼る → 「保存して反映」</p>'+
+ '<div class="row"><button class="btn sub" id="copyPrompt">MUSE用の指示文をコピー</button></div>'+
+ '<label for="cnt">フォロワー数（数字だけ変えたいとき）</label><input id="cnt" type="number" min="0" inputmode="numeric">'+
+ '<label for="json">MUSEの設定（JSON）</label><textarea id="json" spellcheck="false"></textarea>'+
+ '<div class="row"><button class="btn" id="save">保存して反映</button><button class="btn sub" id="close">閉じる</button></div>'+
+ '<div id="msg"></div></div>';
+document.body.appendChild(panel);
+var $ = function(id){return document.getElementById(id);};
+
+var PROMPT = [
+'あなたは「フォロワー水族館」というWebページの設定係です。',
+'フォロワー1人＝魚1匹。数が増えると新しい種類の魚が登場します。',
+'次の形式のJSONだけを返してください（説明文は不要）。',
+'',
+'{',
+'  "title": "ページのタイトル",',
+'  "subtitle": "サブタイトル",',
+'  "count": 今のフォロワー数（整数）,',
+'  "species": [',
+'    {"name":"魚の名前","nickname":"ついた名前（あれば）","unlock":この数から登場,"shape":"fish|round|jelly|long|big のどれか",',
+'     "color":"#体の色","color2":"#模様やおなかの色","pattern":"none|stripe|spots","size":大きさ(8〜100),"speed":速さ(0.3〜2)}',
+'  ]',
+'}',
+'',
+'ルール: species は unlock の小さい順。最初の1つは unlock 1。',
+'shape の意味: fish=ふつうの魚, round=フグのような丸い魚, jelly=クラゲ, long=サメやウツボのような細長い魚, big=クジラのような巨大な生き物。',
+'',
+'今の設定:',
+''
+].join('\n');
+
+/* ---------- fish model ---------- */
+var W=0,H=0,DPR=1, fishes=[], bubbles=[], t0=performance.now();
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=window.innerWidth;H=window.innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize); resize();
+
+function sortedSpecies(){return (state.species||[]).slice().sort(function(a,b){return (a.unlock||1)-(b.unlock||1);});}
+function speciesFor(i){var sp=sortedSpecies(),r=sp[0];for(var k=0;k<sp.length;k++){if((sp[k].unlock||1)<=i)r=sp[k];}return r;}
+function rnd(a,b){return a+Math.random()*(b-a);}
+
+function makeFish(i, fromEdge){
+  var s = speciesFor(i)||{shape:'fish',color:'#9fd8ff',color2:'#fff',size:10,speed:1};
+  var size=(s.size||12)*rnd(.85,1.15), dir=Math.random()<.5?-1:1;
+  var y = s.shape==='big'? rnd(H*.25,H*.6) : rnd(H*.15,H*.9);
+  return {i:i,s:s,size:size,dir:dir,
+    x: (fromEdge && s.shape!=='jelly') ? (dir>0?-size*3:W+size*3) : rnd(0,W),
+    y:y, baseY:y, v:(s.speed||1)*rnd(.6,1.2)*(0.6+12/Math.max(size,12)*.4)*28,
+    ph:rnd(0,6.28), born:fromEdge?performance.now():0};
+}
+function syncFish(animateNew){
+  var n=Math.max(0,Math.floor(state.count||0)), want=Math.min(n,MAX_DRAW);
+  // keep existing fish whose species still match, rebuild the rest
+  var next=[];
+  var sp=sortedSpecies();
+  for(var k=1;k<=want;k++){
+    // 400匹を超えたら全体から間引いて、大きい種類も必ず見えるようにする
+    var i = n>MAX_DRAW ? Math.round(k*n/want) : k;
+    if(k===want && n>MAX_DRAW) i=n;
+    var old=fishes[k-1];
+    if(old && old.s===speciesFor(i)) next.push(old);
+    else next.push(makeFish(i, animateNew && k>fishes.length));
+  }
+  // 大きい生き物が画面を埋めないよう、形ごとに表示数の上限をつける（数字のほうは正確なまま）
+  var CAP={big:3,long:12,jelly:30,round:40}, used={};
+  var small=sp.filter(function(s){return n>=(s.unlock||1) && (s.shape==='fish');});
+  for(var c=0;c<next.length;c++){ var sh=next[c].s.shape; used[sh]=(used[sh]||0)+1;
+    if(n>MAX_DRAW && CAP[sh] && used[sh]>CAP[sh] && small.length){ var pick=small[c%small.length];
+      if(!(fishes[c] && fishes[c].s===pick)) next[c]=makeFish(pick.unlock||1,false); else next[c]=fishes[c]; } }
+  // 解放済みの種類は最低1匹は表示する
+  sp.forEach(function(s,idx){ if(n>=(s.unlock||1) && !next.some(function(f){return f.s===s;}) && next.length){
+    next[Math.min(next.length-1, idx*7)] = makeFish(s.unlock||1, false); }});
+  fishes=next;
+}
+
+/* ---------- drawing ---------- */
+function drawFish(f,t){
+  var s=f.s, sz=f.size, c1=s.color||'#9fd8ff', c2=s.color2||'#fff', sh=s.shape||'fish';
+  var wig=Math.sin(t*6*(s.speed||1)+f.ph);
+  ctx.save(); ctx.translate(f.x,f.y);
+  if(sh!=='jelly') ctx.scale(f.dir,1);
+  if(f.born){var a=Math.min(1,(performance.now()-f.born)/1500); ctx.globalAlpha=a; if(a>=1)f.born=0;}
+  if(sh==='jelly'){
+    ctx.globalAlpha*=.8;
+    var pul=1+Math.sin(t*2+f.ph)*.08;
+    ctx.fillStyle=c1; ctx.beginPath(); ctx.ellipse(0,0,sz*pul,sz*.8/pul,0,Math.PI,0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle=c1; ctx.lineWidth=2; ctx.globalAlpha*=.8;
+    for(var k=-2;k<=2;k++){ctx.beginPath();ctx.moveTo(k*sz*.35,0);
+      for(var j=1;j<=6;j++)ctx.lineTo(k*sz*.35+Math.sin(t*3+j+k+f.ph)*3, j*sz*.28);
+      ctx.stroke();}
+    ctx.fillStyle=c2; ctx.globalAlpha*=.6; ctx.beginPath(); ctx.ellipse(-sz*.3,-sz*.4,sz*.18,sz*.1,0,0,6.28); ctx.fill();
+  } else if(sh==='round'){
+    ctx.fillStyle=c1; ctx.beginPath(); ctx.moveTo(-sz*.9,0); ctx.lineTo(-sz*1.5,-sz*.45+wig*2); ctx.lineTo(-sz*1.5,sz*.45+wig*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,sz,0,6.28); ctx.fill();
+    ctx.fillStyle=c2; ctx.beginPath(); ctx.ellipse(0,sz*.35,sz*.75,sz*.5,0,0,6.28); ctx.fill();
+    if(s.pattern==='spots'){ctx.fillStyle='rgba(60,40,10,.55)';for(var p=0;p<5;p++){ctx.beginPath();ctx.arc(-sz*.5+p*sz*.25,-sz*.35+(p%2)*sz*.2,sz*.08,0,6.28);ctx.fill();}}
+    eye(sz*.45,-sz*.2,sz*.18);
+  } else if(sh==='big'){
+    ctx.fillStyle=c1; ctx.beginPath(); ctx.moveTo(-sz*1.4,0);
+    ctx.quadraticCurveTo(-sz*1.9,-sz*.5+wig*sz*.15,-sz*2.1,-sz*.55+wig*sz*.15); ctx.lineTo(-sz*2.0,sz*.1+wig*sz*.15); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0,0,sz*1.5,sz*.6,0,0,6.28); ctx.fill();
+    ctx.fillStyle=c2; ctx.beginPath(); ctx.ellipse(sz*.2,sz*.3,sz*1.2,sz*.28,0,0,6.28); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.15)'; ctx.lineWidth=2;
+    for(var g=0;g<5;g++){ctx.beginPath();ctx.moveTo(sz*.3+g*sz*.12,sz*.2);ctx.lineTo(sz*.1+g*sz*.12,sz*.5);ctx.stroke();}
+    eye(sz*1.05,-sz*.05,sz*.07);
+  } else {
+    var L = sh==='long'?2.6:1.6, Ht = sh==='long'?.42:.62;
+    ctx.fillStyle=c1;
+    ctx.beginPath(); ctx.moveTo(-sz*L*.45,0); ctx.lineTo(-sz*L*.8,-sz*.55+wig*sz*.15); ctx.lineTo(-sz*L*.8,sz*.55+wig*sz*.15); ctx.closePath(); ctx.fill();
+    if(sh==='long'){ctx.beginPath();ctx.moveTo(-sz*.2,-sz*Ht*.8);ctx.lineTo(sz*.1,-sz*1.0);ctx.lineTo(sz*.35,-sz*Ht*.8);ctx.fill();}
+    ctx.beginPath(); ctx.ellipse(0,0,sz*L*.5,sz*Ht,0,0,6.28); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.ellipse(0,0,sz*L*.5,sz*Ht,0,0,6.28); ctx.clip();
+    ctx.fillStyle=c2;
+    if(s.pattern==='stripe'){for(var st=-1;st<=1;st++){ctx.fillRect(st*sz*L*.3-sz*.1,-sz,sz*.2,sz*2);}}
+    else if(s.pattern==='spots'){for(var q=0;q<6;q++){ctx.beginPath();ctx.arc(-sz*L*.3+q*sz*L*.12,(q%2?-1:1)*sz*Ht*.3,sz*.08,0,6.28);ctx.fill();}}
+    else {ctx.globalAlpha*=.9; ctx.beginPath(); ctx.ellipse(sz*.1,sz*Ht*.55,sz*L*.42,sz*Ht*.45,0,0,6.28); ctx.fill();}
+    ctx.restore();
+    eye(sz*L*.32,-sz*Ht*.25,Math.max(1.6,sz*.11));
+  }
+  ctx.restore();
+  if(s.nickname && f.i===(s.unlock||1)){
+    ctx.save(); ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+    ctx.fillStyle='rgba(2,18,38,.55)';
+    var label=s.nickname, tw=ctx.measureText(label).width+12;
+    ctx.beginPath(); ctx.roundRect(f.x-tw/2, f.y-sz-26, tw, 18, 9); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.fillText(label, f.x, f.y-sz-12);
+    ctx.restore();
+  }
+}
+function eye(x,y,r){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,r,0,6.28);ctx.fill();ctx.fillStyle='#071a2c';ctx.beginPath();ctx.arc(x+r*.25,y,r*.55,0,6.28);ctx.fill();}
+
+function background(t){
+  var g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#0a5a8f'); g.addColorStop(.55,'#063863'); g.addColorStop(1,'#021226');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(var r=0;r<5;r++){var x=(r+.5)*W/5+Math.sin(t*.3+r)*30; var lg=ctx.createLinearGradient(0,0,0,H*.8);
+    lg.addColorStop(0,'rgba(160,220,255,.10)'); lg.addColorStop(1,'rgba(160,220,255,0)'); ctx.fillStyle=lg;
+    ctx.beginPath(); ctx.moveTo(x-20,0); ctx.lineTo(x+20,0); ctx.lineTo(x+90,H*.8); ctx.lineTo(x-50,H*.8); ctx.fill();}
+  ctx.restore();
+  ctx.fillStyle='#0a2a3d'; ctx.beginPath(); ctx.moveTo(0,H);
+  for(var sx=0;sx<=W;sx+=40)ctx.lineTo(sx,H-18-Math.sin(sx*.02)*8); ctx.lineTo(W,H); ctx.fill();
+  for(var k=0;k<Math.ceil(W/70);k++){var bx=k*70+20, hh=50+(k*37%60);
+    ctx.strokeStyle=k%2?'#1f7a4d':'#2c9a5e'; ctx.lineWidth=5; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(bx,H-10);
+    for(var j=1;j<=6;j++)ctx.lineTo(bx+Math.sin(t*1.2+j*.7+k)*6*j/3,H-10-j*hh/6); ctx.stroke();}
+}
+function drawBubbles(dt){
+  if(bubbles.length<40 && Math.random()<.3) bubbles.push({x:rnd(0,W),y:H+5,r:rnd(1.5,4),v:rnd(20,50)});
+  ctx.strokeStyle='rgba(220,245,255,.5)'; ctx.lineWidth=1;
+  for(var i=bubbles.length-1;i>=0;i--){var b=bubbles[i]; b.y-=b.v*dt; b.x+=Math.sin(b.y*.05)*.3;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,6.28); ctx.stroke(); if(b.y<-10)bubbles.splice(i,1);}
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(.05,(now-last)/1000); last=now; var t=(now-t0)/1000;
+  background(t);
+  var order=fishes.slice().sort(function(a,b){return b.size-a.size;});
+  for(var i=0;i<order.length;i++){var f=order[i], sh=f.s.shape;
+    if(sh==='jelly'){f.y=f.baseY+Math.sin(t*.5+f.ph)*40; f.x+=Math.sin(t*.2+f.ph)*.3;}
+    else {f.x+=f.dir*f.v*dt; f.y=f.baseY+Math.sin(t*1.3+f.ph)*f.size*.5;
+      var m=f.size*3; if(f.x>W+m){f.dir=-1;f.baseY=rnd(H*.15,H*.9);} if(f.x<-m){f.dir=1;f.baseY=rnd(H*.15,H*.9);}
+      if(sh==='big') f.baseY=Math.min(Math.max(f.baseY,H*.25),H*.6);}
+    drawFish(f,t);}
+  drawBubbles(dt);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- UI ---------- */
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function renderHud(){
+  $('title').textContent=state.title||'フォロワー水族館'; document.title=state.title||'フォロワー水族館';
+  $('sub').textContent=state.subtitle||'';
+  var n=Math.max(0,Math.floor(state.count||0));
+  $('count').innerHTML=n.toLocaleString()+'<small> 匹</small>'+(n>MAX_DRAW?'<div style="font-size:11px;opacity:.7">（画面には'+MAX_DRAW+'匹まで表示）</div>':'');
+  var sp=sortedSpecies(), h='', nextShown=false;
+  for(var i=0;i<sp.length;i++){var s=sp[i], ok=n>=(s.unlock||1);
+    if(!ok){ if(nextShown) break; nextShown=true; h+='<span class="chip locked"><i style="background:#555"></i>？？？ あと'+((s.unlock||1)-n)+'人</span>'; }
+    else h+='<span class="chip"><i style="background:'+esc(s.color)+'"></i>'+esc(s.name)+(s.nickname?'「'+esc(s.nickname)+'」':'')+'</span>';}
+  legend.innerHTML=h;
+}
+function showToast(text){toast.textContent=text;toast.classList.add('show');clearTimeout(showToast._t);showToast._t=setTimeout(function(){toast.classList.remove('show');},2600);}
+
+function applyState(newState, animate){
+  var oldN=Math.floor(state.count||0), oldSp=sortedSpecies().filter(function(s){return oldN>=(s.unlock||1);}).map(function(s){return s.name;});
+  state=newState; syncFish(animate); renderHud();
+  var n=Math.floor(state.count||0);
+  var newly=sortedSpecies().filter(function(s){return n>=(s.unlock||1) && oldSp.indexOf(s.name)<0;});
+  if(animate && newly.length) showToast('🎉 新しい仲間「'+newly[newly.length-1].name+'」が登場！');
+  else if(animate && n>oldN) showToast('🐟 +'+(n-oldN)+'匹 やってきた！');
+}
+
+function validate(o){
+  if(!o||typeof o!=='object') throw new Error('{ } で囲まれた設定を貼ってください');
+  if(!Array.isArray(o.species)||!o.species.length) throw new Error('species（魚の種類）が見つかりません');
+  o.count=Math.max(0,Math.floor(Number(o.count)||0));
+  o.species.forEach(function(s,i){ if(!s.name) s.name='魚'+(i+1); s.unlock=Math.max(1,Math.floor(Number(s.unlock)||1));
+    if(['fish','round','jelly','long','big'].indexOf(s.shape)<0) s.shape='fish';
+    s.size=Math.min(120,Math.max(5,Number(s.size)||12)); s.speed=Math.min(3,Math.max(.1,Number(s.speed)||1)); });
+  return o;
+}
+function extractJson(text){var a=text.indexOf('{'),b=text.lastIndexOf('}'); if(a<0||b<a) throw new Error('{ } が見つかりません'); return JSON.parse(text.slice(a,b+1));}
+
+function buildDoc(s){
+  var json=JSON.stringify(s).replace(/</g,'\\u003c');
+  var SC='scr'+'ipt';
+  return '<!DOCTYPE html>\n<html lang="ja">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>'+esc(s.title||'フォロワー水族館')+'</title>\n<style id="appstyle">'+STYLE+'</style>\n</head>\n<body>\n<'+SC+' id="state" type="application/json">'+json+'</'+SC+'>\n<'+SC+' id="app">'+APP+'</'+SC+'>\n</body>\n</html>\n';
+}
+
+function openPanel(){ $('cnt').value=Math.floor(state.count||0); $('json').value=JSON.stringify(state,null,2); $('msg').textContent=''; panel.classList.add('open'); }
+gear.onclick=openPanel;
+$('close').onclick=function(){panel.classList.remove('open');};
+panel.addEventListener('click',function(e){if(e.target===panel)panel.classList.remove('open');});
+$('cnt').addEventListener('input',function(){ try{var o=extractJson($('json').value); o.count=Math.max(0,Math.floor(Number(this.value)||0)); $('json').value=JSON.stringify(o,null,2);}catch(e){} });
+$('copyPrompt').onclick=function(){
+  var text=PROMPT+JSON.stringify(state,null,2)+'\n\nこの設定をもとに、次の内容で更新してください：（ここに「フォロワーが45人になった」「深海っぽい魚を増やして」などを書く）';
+  var done=function(){$('msg').textContent='コピーしました。MUSEに貼り付けて、最後の行に伝えたいことを書いてください。';};
+  try{ navigator.clipboard.writeText(text).then(done,function(){fallback();}); }catch(e){fallback();}
+  function fallback(){ $('json').value=text; $('json').select(); $('msg').textContent='自動コピーできなかったので、下の欄に表示しました。全選択してコピーしてください（使い終わったらMUSEの返事を貼り直してください）。'; }
+};
+$('save').onclick=function(){
+  var o; try{ o=validate(extractJson($('json').value)); }catch(e){ $('msg').textContent='⚠ 読み込めませんでした：'+e.message; return; }
+  applyState(o,true); panel.classList.remove('open');
+  if(!artifactApi){ showToast('この画面だけで反映しました（保存はされません）'); return; }
+  artifactApi.publish(buildDoc(o)).catch(function(err){
+    var code=(err&&(err.code||err.message))||'';
+    if(/not_granted|not_writer/.test(code)) showToast('閲覧のみのため、この画面だけで反映しました');
+    else if(!/conflict/.test(code)) showToast('保存できませんでした：'+code);
+  });
+};
+
+syncFish(false); renderHud(); requestAnimationFrame(frame);
+if(window.claude && window.claude.use){ window.claude.use('artifact').then(function(a){artifactApi=a;}).catch(function(){}); }
+})();
+</script>
+</body>
+</html>
