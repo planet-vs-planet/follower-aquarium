@@ -477,7 +477,7 @@ document.addEventListener('keydown',function(ev){if(ev.key==='Escape')histPanel.
 syncFish(); renderHud(); renderHistory(); requestAnimationFrame(frame);
 })();
 </script>
-<!-- ================= BGM（泡の音） ================= -->
+<!-- ================= BGM（海の音） ================= -->
 <style id="bgmstyle">
 #sndBtn{position:fixed;left:16px;bottom:14px;z-index:11;background:#eef3f5;color:#16263a;border:2px solid #16263a;border-left:8px solid #3d9bdc;border-radius:4px;padding:8px 14px 8px 10px;font-family:"Klee One","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;font-weight:600;font-size:14px;cursor:pointer;box-shadow:3px 3px 0 rgba(11,44,74,.5)}
 #sndBtn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 rgba(11,44,74,.5)}
@@ -487,12 +487,12 @@ syncFish(); renderHud(); renderHistory(); requestAnimationFrame(frame);
 (function(){
   var a=document.getElementById('bgm'); a.volume=.85;
   var b=document.createElement('button');
-  b.id='sndBtn'; b.type='button'; b.textContent='🔇 泡の音';
+  b.id='sndBtn'; b.type='button'; b.textContent='🔇 海の音';
   document.body.appendChild(b);
   var on=false;
   b.addEventListener('click',function(){
-    if(on){ a.pause(); on=false; b.textContent='🔇 泡の音'; }
-    else{ a.play().then(function(){ on=true; b.textContent='🔊 泡の音'; }).catch(function(){}); }
+    if(on){ a.pause(); on=false; b.textContent='🔇 海の音'; }
+    else{ a.play().then(function(){ on=true; b.textContent='🔊 海の音'; }).catch(function(){}); }
   });
 })();
 </script>
