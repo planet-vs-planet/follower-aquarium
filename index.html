@@ -17,17 +17,17 @@ canvas{display:block;width:100vw;height:100vh}
 .chip{background:rgba(0,20,50,.55);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:4px 10px;font-size:12px;display:flex;align-items:center;gap:6px;backdrop-filter:blur(4px)}
 .chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
 .chip.locked{opacity:.45}
-#gear{position:fixed;right:12px;bottom:12px;width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:22px;cursor:pointer;backdrop-filter:blur(4px)}
+
 #toast{position:fixed;left:50%;top:22%;transform:translate(-50%,-20px);background:rgba(255,255,255,.95);color:#06325c;font-weight:800;padding:12px 20px;border-radius:14px;opacity:0;transition:all .5s;pointer-events:none;text-align:center;max-width:86vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
-#panel{position:fixed;inset:0;background:rgba(0,10,25,.7);display:none;align-items:flex-end;justify-content:center}
-#panel.open{display:flex}
-#sheet{background:#0b2240;width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px}
-#sheet h2{font-size:17px;margin-bottom:6px}
-#sheet p{font-size:13px;opacity:.8;line-height:1.6;margin-bottom:10px}
-#sheet label{display:block;font-size:13px;font-weight:700;margin:14px 0 6px}
-#sheet input,#sheet textarea{width:100%;background:#061629;color:#fff;border:1px solid #2a4a72;border-radius:10px;padding:10px;font-size:15px;font-family:inherit}
-#sheet textarea{height:170px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+
+
+
+
+
+
+
+
 .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .btn{flex:1;min-width:130px;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:800;cursor:pointer;background:#1f6feb;color:#fff}
 .btn.sub{background:#22406a}
@@ -52,40 +52,7 @@ var hud = el('div',{id:'hud'},'<div><div id="title"></div><div id="sub"></div></
 document.body.appendChild(hud);
 var legend = el('div',{id:'legend'}); document.body.appendChild(legend);
 var toast = el('div',{id:'toast'}); document.body.appendChild(toast);
-var gear = el('button',{id:'gear','aria-label':'設定'},'⚙'); document.body.appendChild(gear);
-var panel = el('div',{id:'panel'});
-panel.innerHTML = '<div id="sheet">'+
- '<h2>MUSEで更新する</h2>'+
- '<p>①「MUSE用の指示文をコピー」→ MUSEに貼って、フォロワー数や魚のアイデアを伝える<br>② MUSEが返した設定（{ から } まで）を下に貼る → 「保存して反映」</p>'+
- '<div class="row"><button class="btn sub" id="copyPrompt">MUSE用の指示文をコピー</button></div>'+
- '<label for="cnt">フォロワー数（数字だけ変えたいとき）</label><input id="cnt" type="number" min="0" inputmode="numeric">'+
- '<label for="json">MUSEの設定（JSON）</label><textarea id="json" spellcheck="false"></textarea>'+
- '<div class="row"><button class="btn" id="save">保存して反映</button><button class="btn sub" id="close">閉じる</button></div>'+
- '<div id="msg"></div></div>';
-document.body.appendChild(panel);
 var $ = function(id){return document.getElementById(id);};
-
-var PROMPT = [
-'あなたは「フォロワー水族館」というWebページの設定係です。',
-'フォロワー1人＝魚1匹。数が増えると新しい種類の魚が登場します。',
-'次の形式のJSONだけを返してください（説明文は不要）。',
-'',
-'{',
-'  "title": "ページのタイトル",',
-'  "subtitle": "サブタイトル",',
-'  "count": 今のフォロワー数（整数）,',
-'  "species": [',
-'    {"name":"魚の名前","nickname":"ついた名前（あれば）","unlock":この数から登場,"shape":"fish|round|jelly|long|big のどれか",',
-'     "color":"#体の色","color2":"#模様やおなかの色","pattern":"none|stripe|spots","size":大きさ(8〜100),"speed":速さ(0.3〜2)}',
-'  ]',
-'}',
-'',
-'ルール: species は unlock の小さい順。最初の1つは unlock 1。',
-'shape の意味: fish=ふつうの魚, round=フグのような丸い魚, jelly=クラゲ, long=サメやウツボのような細長い魚, big=クジラのような巨大な生き物。',
-'',
-'今の設定:',
-''
-].join('\n');
 
 /* ---------- fish model ---------- */
 var W=0,H=0,DPR=1, fishes=[], bubbles=[], t0=performance.now();
@@ -263,30 +230,8 @@ function buildDoc(s){
   return '<!DOCTYPE html>\n<html lang="ja">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>'+esc(s.title||'フォロワー水族館')+'</title>\n<style id="appstyle">'+STYLE+'</style>\n</head>\n<body>\n<'+SC+' id="state" type="application/json">'+json+'</'+SC+'>\n<'+SC+' id="app">'+APP+'</'+SC+'>\n</body>\n</html>\n';
 }
 
-function openPanel(){ $('cnt').value=Math.floor(state.count||0); $('json').value=JSON.stringify(state,null,2); $('msg').textContent=''; panel.classList.add('open'); }
-gear.onclick=openPanel;
-$('close').onclick=function(){panel.classList.remove('open');};
-panel.addEventListener('click',function(e){if(e.target===panel)panel.classList.remove('open');});
-$('cnt').addEventListener('input',function(){ try{var o=extractJson($('json').value); o.count=Math.max(0,Math.floor(Number(this.value)||0)); $('json').value=JSON.stringify(o,null,2);}catch(e){} });
-$('copyPrompt').onclick=function(){
-  var text=PROMPT+JSON.stringify(state,null,2)+'\n\nこの設定をもとに、次の内容で更新してください：（ここに「フォロワーが45人になった」「深海っぽい魚を増やして」などを書く）';
-  var done=function(){$('msg').textContent='コピーしました。MUSEに貼り付けて、最後の行に伝えたいことを書いてください。';};
-  try{ navigator.clipboard.writeText(text).then(done,function(){fallback();}); }catch(e){fallback();}
-  function fallback(){ $('json').value=text; $('json').select(); $('msg').textContent='自動コピーできなかったので、下の欄に表示しました。全選択してコピーしてください（使い終わったらMUSEの返事を貼り直してください）。'; }
-};
-$('save').onclick=function(){
-  var o; try{ o=validate(extractJson($('json').value)); }catch(e){ $('msg').textContent='⚠ 読み込めませんでした：'+e.message; return; }
-  applyState(o,true); panel.classList.remove('open');
-  if(!artifactApi){ showToast('この画面だけで反映しました（保存はされません）'); return; }
-  artifactApi.publish(buildDoc(o)).catch(function(err){
-    var code=(err&&(err.code||err.message))||'';
-    if(/not_granted|not_writer/.test(code)) showToast('閲覧のみのため、この画面だけで反映しました');
-    else if(!/conflict/.test(code)) showToast('保存できませんでした：'+code);
-  });
-};
-
 syncFish(false); renderHud(); requestAnimationFrame(frame);
-if(window.claude && window.claude.use){ window.claude.use('artifact').then(function(a){artifactApi=a;}).catch(function(){}); }
+
 })();
 </script>
 </body>
